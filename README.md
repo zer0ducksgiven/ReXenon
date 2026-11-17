@@ -38,6 +38,8 @@ values. Fixes over XenonRecomp include:
 - `vpkd3d128` for types 0-5 with packs 1-3, matching Xenia (type 6 and pack 0 still trap as unimplemented).
   XenonRecomp's FLOAT16_4 pack read its source after overwriting it when source and destination were the
   same register; FM2's shipped code had 4 such packs writing garbage.
+- `vsldoi128` encodings that the disassembler took for PPC405 multiply-accumulate instructions (`mullhwu.`,
+  `macchw`...) are decoded as `vsldoi128`. Forza Motorsport 3 has one.
 - `dcbz` clears the whole 128-byte cache line (XenonRecomp cleared 32 bytes).
 - `fctid`/`fctidz` saturate at exactly 2^63. `mfocrf` and `mtfsf` use their field masks.
 - Divides by zero and overflowing divides give 0 instead of crashing the host. PowerPC leaves the result

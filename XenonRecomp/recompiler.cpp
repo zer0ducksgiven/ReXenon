@@ -4085,6 +4085,35 @@ static bool LooksLikeJumpTable(const Image& image, const Function& fn, const uin
     return false;
 }
 
+extern "C" const powerpc_opcode powerpc_opcodes[];
+extern "C" const int powerpc_num_opcodes;
+
+// Primary opcode 4 with bit 4 set is always vsldoi128 on Xenon (no AltiVec or other VMX128 form sets it), but the
+// disassembler's table lists the PPC405/440 multiply and multiply-accumulate entries (mullhwu., mulhhwu, macchw...)
+// first, and some vsldoi128 encodings match them. Forza Motorsport 3 has one at 8284AA90, decoded as mullhwu.
+// (really vsldoi128 v11,v0,v61,12). Xenon has no PPC405 instructions, so re-decode any such match as vsldoi128.
+static void DecodeVsldoi128(ppc_insn& insn)
+{
+    static const powerpc_opcode* vsldoi128 = []
+        {
+            for (int i = 0; i < powerpc_num_opcodes; i++)
+            {
+                if (powerpc_opcodes[i].id == PPC_INST_VSLDOI128)
+                    return &powerpc_opcodes[i];
+            }
+            return (const powerpc_opcode*)nullptr;
+        }();
+
+    const uint32_t word = insn.instruction;
+    insn.opcode = vsldoi128;
+    memset(insn.operands, 0, sizeof(insn.operands));
+    insn.operands[0] = ((word << 3) & 0x60) | ((word >> 21) & 0x1F); // VD128
+    insn.operands[1] = ((word >> 4) & 0x40) | (word & 0x20) | ((word >> 16) & 0x1F); // VA128
+    insn.operands[2] = ((word << 5) & 0x60) | ((word >> 11) & 0x1F); // VB128
+    insn.operands[3] = (word >> 6) & 0xF; // SHB
+    snprintf(insn.op_str, sizeof(insn.op_str), "v%u,v%u,v%u,%u", insn.operands[0], insn.operands[1], insn.operands[2], insn.operands[3]);
+}
+
 bool Recompiler::Recompile(const Function& fn)
 {
     auto base = fn.base;
@@ -4219,6 +4248,9 @@ bool Recompiler::Recompile(const Function& fn)
             switchTable = config.switchTables.find(base);
 
         ppc::Disassemble(data, 4, base, insn);
+
+        if (insn.opcode != nullptr && PPC_OP(insn.instruction) == 4 && (insn.instruction & 0x10) != 0 && insn.opcode->id != PPC_INST_VSLDOI128)
+            DecodeVsldoi128(insn);
 
         if (insn.opcode == nullptr)
         {
